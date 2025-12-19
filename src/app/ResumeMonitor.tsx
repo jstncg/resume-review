@@ -366,7 +366,8 @@ export function ResumeMonitor() {
                 placeholder="Write a short review…"
                 {...registerReview('review', {
                   required: true,
-                  maxLength: 256,
+                  maxLength: 255,
+                  validate: (v) => v.trim().length > 0,
                 })}
               />
               <div className="flex items-center justify-between gap-4">
@@ -375,15 +376,20 @@ export function ResumeMonitor() {
                     <span className="text-red-600 dark:text-red-400">
                       {reviewError}
                     </span>
+                  ) : reviewFormState.errors.review?.type === 'required' ||
+                    reviewFormState.errors.review?.type === 'validate' ? (
+                    <span className="text-red-600 dark:text-red-400">
+                      Review is required.
+                    </span>
                   ) : reviewFormState.errors.review?.type === 'maxLength' ? (
                     <span className="text-red-600 dark:text-red-400">
-                      Review must be ≤ 256 characters.
+                      Review must be ≤ 255 characters.
                     </span>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {(watchReview('review') || '').length}/256
+                    {(watchReview('review') || '').length}/255
                   </span>
                   <button
                     type="submit"

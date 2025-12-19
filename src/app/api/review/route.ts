@@ -43,9 +43,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Review is required' }, { status: 400 });
   }
 
-  if (review.length > 256) {
+  if (review.length > 255) {
     return NextResponse.json(
-      { error: 'Review must be <= 256 characters' },
+      { error: 'Review must be <= 255 characters' },
       { status: 400 }
     );
   }
