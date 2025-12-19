@@ -56,6 +56,7 @@ export function ResumeMonitor() {
   const [reviewTarget, setReviewTarget] = useState<ResumeItem | null>(null);
   const [reviewSaving, setReviewSaving] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [pdfTarget, setPdfTarget] = useState<ResumeItem | null>(null);
 
   const {
     register: registerReview,
@@ -196,6 +197,12 @@ export function ResumeMonitor() {
     resetReview({ review: '' });
   }, [reviewTarget, resetReview]);
 
+  useEffect(() => {
+    if (!pdfTarget) return;
+    // close review modal if open
+    setReviewTarget(null);
+  }, [pdfTarget]);
+
   const onSubmitReview = handleSubmitReview(async (values) => {
     if (!reviewTarget) return;
     setReviewSaving(true);
@@ -286,13 +293,16 @@ export function ResumeMonitor() {
                     <li
                       key={it.relPath}
                       className={`rounded-xl border border-black/[.08] bg-white p-3 text-sm dark:border-white/[.145] dark:bg-black ${
-                        col.label === STATUS_GOOD_FIT
+                        col.label === STATUS_GOOD_FIT ||
+                        col.label === 'user_reviewed'
                           ? 'cursor-pointer hover:bg-black/[.02] dark:hover:bg-white/[.04]'
                           : ''
                       }`}
                       onClick={
                         col.label === STATUS_GOOD_FIT
                           ? () => setReviewTarget(it)
+                          : col.label === 'user_reviewed'
+                          ? () => setPdfTarget(it)
                           : undefined
                       }
                     >
@@ -385,6 +395,61 @@ export function ResumeMonitor() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {pdfTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setPdfTarget(null)}
+        >
+          <div
+            className="w-full max-w-6xl rounded-2xl border border-black/[.10] bg-white p-6 shadow-xl dark:border-white/[.145] dark:bg-black"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-semibold text-black dark:text-zinc-50">
+                  View PDF
+                </h3>
+                <p className="mt-1 truncate text-sm text-zinc-600 dark:text-zinc-400">
+                  {pdfTarget.filename}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Review: {getUserReviewText(pdfTarget.label) || '(empty)'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  className="rounded-full px-3 py-1 text-sm text-zinc-600 hover:bg-black/[.04] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                  href={`/api/resume-pdf?filename=${encodeURIComponent(
+                    pdfTarget.filename
+                  )}&download=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download
+                </a>
+                <button
+                  type="button"
+                  className="rounded-full px-3 py-1 text-sm text-zinc-600 hover:bg-black/[.04] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                  onClick={() => setPdfTarget(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 h-[75vh] overflow-hidden rounded-xl border border-black/[.08] bg-zinc-50 dark:border-white/[.145] dark:bg-zinc-950">
+              <iframe
+                title={pdfTarget.filename}
+                className="h-full w-full"
+                src={`/api/resume-pdf?filename=${encodeURIComponent(
+                  pdfTarget.filename
+                )}`}
+              />
+            </div>
           </div>
         </div>
       ) : null}
