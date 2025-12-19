@@ -1,6 +1,8 @@
-import { resumeWatcher } from "@/lib/resumeWatcher";
+import { resumeWatcher } from '@/lib/resumeWatcher';
+import { readManifestLabels } from '@/lib/manifest';
+import path from 'node:path';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
 export async function GET() {
   const encoder = new TextEncoder();
@@ -21,20 +23,31 @@ export async function GET() {
       // Initial hello so the client knows it connected
       send(
         {
-          type: "hello",
+          type: 'client-greeting',
           ready: resumeWatcher.isReady(),
           ts: Date.now(),
         },
-        "hello"
+        'client-greeting'
       );
 
-      unsubscribeAdded = resumeWatcher.on("added", (evt) => {
-        send(evt, "added");
+      unsubscribeAdded = resumeWatcher.on('added', (evt) => {
+        void (async () => {
+          const filename = path.posix.basename(evt.relPath);
+          const labels = await readManifestLabels();
+          send(
+            {
+              ...evt,
+              filename,
+              label: labels.get(filename) ?? null,
+            },
+            'added'
+          );
+        })();
       });
 
       if (!resumeWatcher.isReady()) {
-        unsubscribeReady = resumeWatcher.on("ready", () => {
-          send({ type: "ready", ts: Date.now() }, "ready");
+        unsubscribeReady = resumeWatcher.on('ready', () => {
+          send({ type: 'ready', ts: Date.now() }, 'ready');
         });
       }
 
@@ -52,12 +65,10 @@ export async function GET() {
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   });
 }
-
-

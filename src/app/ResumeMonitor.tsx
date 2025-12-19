@@ -1,36 +1,44 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+type ResumeItem = {
+  filename: string;
+  relPath: string;
+  label: string | null;
+};
 
 type ResumeListResponse = {
   dir: string;
-  files: string[];
+  items: ResumeItem[];
 };
 
 type AddedEvent = {
-  type: "added";
+  type: 'added';
+  filename: string;
   relPath: string;
+  label: string | null;
   ts: number;
 };
 
 export function ResumeMonitor() {
-  const [dir, setDir] = useState<string>("");
-  const [files, setFiles] = useState<string[]>([]);
+  const [dir, setDir] = useState<string>('');
+  const [items, setItems] = useState<ResumeItem[]>([]);
   const [connected, setConnected] = useState<boolean>(false);
   const esRef = useRef<EventSource | null>(null);
 
-  const countLabel = useMemo(() => `PDFs (${files.length})`, [files.length]);
+  const countLabel = useMemo(() => `PDFs (${items.length})`, [items.length]);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      const res = await fetch("/api/resumes", { cache: "no-store" });
+      const res = await fetch('/api/resumes', { cache: 'no-store' });
       if (!res.ok) throw new Error(`Failed to load resumes: ${res.status}`);
       const json = (await res.json()) as ResumeListResponse;
       if (cancelled) return;
       setDir(json.dir);
-      setFiles(json.files);
+      setItems(json.items);
     };
 
     load().catch((e) => {
@@ -38,20 +46,31 @@ export function ResumeMonitor() {
       console.error(e);
     });
 
-    const es = new EventSource("/api/resume-events");
+    const es = new EventSource('/api/resume-events');
     esRef.current = es;
 
-    es.addEventListener("open", () => setConnected(true));
-    es.addEventListener("error", () => setConnected(false));
+    es.addEventListener('open', () => setConnected(true));
+    es.addEventListener('error', () => setConnected(false));
 
-    es.addEventListener("added", (msg) => {
+    es.addEventListener('added', (msg) => {
       try {
         const evt = JSON.parse((msg as MessageEvent).data) as AddedEvent;
-        if (!evt?.relPath) return;
-        setFiles((prev) => (prev.includes(evt.relPath) ? prev : [evt.relPath, ...prev]));
+        if (!evt?.relPath || !evt?.filename) return;
+        setItems((prev) =>
+          prev.some((x) => x.relPath === evt.relPath)
+            ? prev
+            : [
+                {
+                  filename: evt.filename,
+                  relPath: evt.relPath,
+                  label: evt.label,
+                },
+                ...prev,
+              ]
+        );
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.error("Bad SSE message", e);
+        console.error('Bad SSE message', e);
       }
     });
 
@@ -70,17 +89,17 @@ export function ResumeMonitor() {
             Live resume directory
           </h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {dir || "Loading..."}
+            {dir || 'Loading...'}
           </p>
         </div>
         <div
           className={`rounded-full px-3 py-1 text-xs font-medium ${
             connected
-              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200"
-              : "bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200'
+              : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300'
           }`}
         >
-          {connected ? "connected" : "disconnected"}
+          {connected ? 'connected' : 'disconnected'}
         </div>
       </div>
 
@@ -95,17 +114,27 @@ export function ResumeMonitor() {
         </div>
 
         <ul className="mt-3 max-h-[420px] overflow-auto rounded-xl border border-black/[.08] bg-zinc-50 p-3 text-sm dark:border-white/[.145] dark:bg-zinc-950">
-          {files.length === 0 ? (
+          {items.length === 0 ? (
             <li className="py-6 text-center text-zinc-500 dark:text-zinc-400">
               No PDFs found.
             </li>
           ) : (
-            files.map((f) => (
+            items.map((it) => (
               <li
-                key={f}
+                key={it.relPath}
                 className="flex items-center justify-between gap-4 rounded-lg px-2 py-1.5 hover:bg-black/[.04] dark:hover:bg-white/[.06]"
               >
-                <span className="truncate text-zinc-900 dark:text-zinc-100">{f}</span>
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">
+                    {it.filename}
+                  </div>
+                  <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {it.relPath}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-black/[.06] px-2 py-1 text-xs font-medium text-zinc-800 dark:bg-white/[.10] dark:text-zinc-200">
+                  {it.label ?? 'unlabeled'}
+                </span>
               </li>
             ))
           )}
@@ -114,5 +143,3 @@ export function ResumeMonitor() {
     </section>
   );
 }
-
-
