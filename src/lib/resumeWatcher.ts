@@ -134,21 +134,19 @@ export class ResumeWatcher {
     this.emitter.emit('added', evt);
 
     // Kick off analysis line: pending -> in_progress, and emit label update.
-    void enqueuePdfAnalysis(filename)
-      .then((newLabel) => {
-        if (!newLabel) return;
+    enqueuePdfAnalysis({
+      filename,
+      relPath: evt.relPath,
+      onUpdate: (u) => {
         this.emitter.emit('label', {
           type: 'label',
-          filename,
-          relPath: evt.relPath,
-          label: newLabel,
+          filename: u.filename,
+          relPath: u.relPath,
+          label: u.label,
           ts: Date.now(),
         } satisfies ResumeLabelEvent);
-      })
-      .catch((e) => {
-        // eslint-disable-next-line no-console
-        console.error('[watch] analysis pipeline error', e);
-      });
+      },
+    });
   }
 
   on<K extends keyof ResumeWatcherEvents>(

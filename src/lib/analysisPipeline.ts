@@ -1,46 +1,81 @@
 import { readManifestLabels, upsertManifestLabel } from '@/lib/manifest';
-import { STATUS_IN_PROGRESS, STATUS_PENDING } from '@/lib/labels';
+import {
+  STATUS_BAD_FIT,
+  STATUS_GOOD_FIT,
+  STATUS_IN_PROGRESS,
+  STATUS_PENDING,
+} from '@/lib/labels';
+import type { Status } from '@/lib/labels';
+
+export type AnalyzeUpdate = {
+  filename: string;
+  relPath: string;
+  label: Status;
+};
 
 type AnalyzeJob = {
   filename: string;
-  resolve: (label: string | null) => void;
-  reject: (err: unknown) => void;
+  relPath: string;
+  onUpdate?: (u: AnalyzeUpdate) => void;
 };
 
 let queue: AnalyzeJob[] = [];
-let running = false;
+let runningCount = 0;
 
-async function runNext() {
-  if (running) return;
-  const job = queue.shift();
-  if (!job) return;
-  running = true;
-  try {
-    const labels = await readManifestLabels();
-    const current = labels.get(job.filename);
+const MAX_CONCURRENCY = Math.max(
+  1,
+  Number.parseInt(process.env.ANALYSIS_MAX_CONCURRENCY ?? '2', 10) || 2
+);
 
-    // Only transition pending -> in_progress for new files.
-    if (current !== STATUS_PENDING) {
-      job.resolve(null);
-      return;
-    }
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-    await upsertManifestLabel(job.filename, STATUS_IN_PROGRESS);
-    // eslint-disable-next-line no-console
-    console.log(`PDF ${job.filename} is in_progress of being analyzed`);
-    job.resolve(STATUS_IN_PROGRESS);
-  } catch (e) {
-    job.reject(e);
-  } finally {
-    running = false;
-    // keep draining
-    void runNext();
+function pickFinalLabel(): Status {
+  return Math.random() < 0.5 ? STATUS_GOOD_FIT : STATUS_BAD_FIT;
+}
+
+function drain() {
+  while (runningCount < MAX_CONCURRENCY && queue.length > 0) {
+    const job = queue.shift()!;
+    runningCount++;
+    void runJob(job).finally(() => {
+      runningCount--;
+      drain();
+    });
   }
 }
 
-export function enqueuePdfAnalysis(filename: string): Promise<string | null> {
-  return new Promise((resolve, reject) => {
-    queue.push({ filename, resolve, reject });
-    void runNext();
-  });
+async function runJob(job: AnalyzeJob) {
+  const { filename, relPath, onUpdate } = job;
+  try {
+    const labels = await readManifestLabels();
+    const current = labels.get(filename);
+
+    // Only analyze files that are newly discovered (pending) or already in progress.
+    // Never overwrite final labels.
+    if (current && current !== STATUS_PENDING && current !== STATUS_IN_PROGRESS)
+      return;
+
+    await upsertManifestLabel(filename, STATUS_IN_PROGRESS);
+    onUpdate?.({ filename, relPath, label: STATUS_IN_PROGRESS });
+    // eslint-disable-next-line no-console
+    console.log(`PDF ${filename} is ${STATUS_IN_PROGRESS} of being analyzed`);
+
+    await sleep(3000);
+
+    const finalLabel = pickFinalLabel();
+    await upsertManifestLabel(filename, finalLabel);
+    onUpdate?.({ filename, relPath, label: finalLabel });
+    // eslint-disable-next-line no-console
+    console.log(`PDF ${filename} analysis finished: ${finalLabel}`);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[analysis] job error', e);
+  }
+}
+
+export function enqueuePdfAnalysis(job: AnalyzeJob) {
+  queue.push(job);
+  drain();
 }
