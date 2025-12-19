@@ -161,6 +161,18 @@ export class ResumeWatcher {
     return () => this.emitter.off(event, cb as (...args: any[]) => void);
   }
 
+  emitLabelUpdate(
+    evt: Omit<ResumeLabelEvent, 'type' | 'ts'> & { ts?: number }
+  ) {
+    this.emitter.emit('label', {
+      type: 'label',
+      filename: evt.filename,
+      relPath: evt.relPath,
+      label: evt.label,
+      ts: evt.ts ?? Date.now(),
+    } satisfies ResumeLabelEvent);
+  }
+
   isReady() {
     return this.ready;
   }
@@ -185,3 +197,25 @@ function getSingleton(): ResumeWatcher {
 }
 
 export const resumeWatcher = getSingleton();
+
+export function emitResumeLabelUpdate(
+  evt: Omit<ResumeLabelEvent, 'type' | 'ts'> & { ts?: number }
+) {
+  const rw: any = resumeWatcher as any;
+
+  if (typeof rw.emitLabelUpdate === 'function') {
+    rw.emitLabelUpdate(evt);
+    return;
+  }
+
+  const emitter: any = rw?.emitter;
+  if (emitter?.emit) {
+    emitter.emit('label', {
+      type: 'label',
+      filename: evt.filename,
+      relPath: evt.relPath,
+      label: evt.label,
+      ts: evt.ts ?? Date.now(),
+    } satisfies ResumeLabelEvent);
+  }
+}

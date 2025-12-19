@@ -4,7 +4,7 @@ import { ConditionForm } from './ConditionForm';
 export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 font-sans dark:bg-black">
-      <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-6 py-14">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-14">
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
             Sentra Resume Monitor
