@@ -1,6 +1,4 @@
 import { resumeWatcher } from '@/lib/resumeWatcher';
-import { readManifestLabels } from '@/lib/manifest';
-import path from 'node:path';
 
 export const runtime = 'nodejs';
 
@@ -31,18 +29,7 @@ export async function GET() {
       );
 
       unsubscribeAdded = resumeWatcher.on('added', (evt) => {
-        void (async () => {
-          const filename = path.posix.basename(evt.relPath);
-          const labels = await readManifestLabels();
-          send(
-            {
-              ...evt,
-              filename,
-              label: labels.get(filename) ?? null,
-            },
-            'added'
-          );
-        })();
+        send(evt, 'added');
       });
 
       if (!resumeWatcher.isReady()) {

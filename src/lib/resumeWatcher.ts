@@ -1,11 +1,15 @@
-import chokidar from "chokidar";
-import { EventEmitter } from "node:events";
-import path from "node:path";
+import chokidar from 'chokidar';
+import { EventEmitter } from 'node:events';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { appendPendingIfMissing } from '@/lib/manifest';
 
 export type ResumeAddedEvent = {
-  type: "added";
+  type: 'added';
+  filename: string;
   absPath: string;
   relPath: string;
+  label: string | null;
   ts: number;
 };
 
@@ -15,15 +19,15 @@ type ResumeWatcherEvents = {
 };
 
 function isPdf(filePath: string) {
-  return path.extname(filePath).toLowerCase() === ".pdf";
+  return path.extname(filePath).toLowerCase() === '.pdf';
 }
 
 function defaultWatchDir() {
-  return path.resolve(process.cwd(), "dataset", "sentra_test_resumes");
+  return path.resolve(process.cwd(), 'dataset', 'sentra_test_resumes');
 }
 
 function toPosixPath(p: string) {
-  return p.split(path.sep).join("/");
+  return p.split(path.sep).join('/');
 }
 
 export class ResumeWatcher {
@@ -46,50 +50,84 @@ export class ResumeWatcher {
       ignored: (p) => {
         const base = path.basename(p);
         return (
-          base.startsWith(".") ||
-          base.endsWith("~") ||
-          base.endsWith(".tmp") ||
-          base.endsWith(".crdownload")
+          base.startsWith('.') ||
+          base.endsWith('~') ||
+          base.endsWith('.tmp') ||
+          base.endsWith('.crdownload')
         );
       },
     });
 
-    watcher.on("add", (absPath) => {
-      if (!isPdf(absPath)) return;
+    watcher.on('add', (absPath) => void this.handleAdd(absPath));
 
-      // ignore all initial adds; clients should use /api/resumes for initial state
-      if (!this.ready) return;
-
-      const evt: ResumeAddedEvent = {
-        type: "added",
-        absPath,
-        relPath: toPosixPath(path.relative(process.cwd(), absPath)),
-        ts: Date.now(),
-      };
-
-      // Server-side visibility for debugging
-      // eslint-disable-next-line no-console
-      console.log(`[watch] NEW FILE ADDED: ${evt.relPath}`);
-
-      this.emitter.emit("added", evt);
-    });
-
-    watcher.on("ready", () => {
+    watcher.on('ready', () => {
       this.ready = true;
-      this.emitter.emit("ready");
+      // Best-effort reconciliation: if any PDFs exist in the directory but not in
+      // manifest.csv (e.g. added while the server was down), add them as pending.
+      void this.syncManifestFromDisk();
+      this.emitter.emit('ready');
       // eslint-disable-next-line no-console
       console.log(
         `[watch] Resume watcher ready (SSE events enabled) - dir=${this.watchDir}`
       );
     });
 
-    watcher.on("error", (err) => {
+    watcher.on('error', (err) => {
       // eslint-disable-next-line no-console
-      console.error("[watch] watcher error", err);
+      console.error('[watch] watcher error', err);
     });
   }
 
-  on<K extends keyof ResumeWatcherEvents>(event: K, cb: ResumeWatcherEvents[K]) {
+  private async syncManifestFromDisk() {
+    try {
+      const names = await fs.readdir(this.watchDir);
+      const pdfs = names.filter((n) => n.toLowerCase().endsWith('.pdf'));
+      for (const filename of pdfs) {
+        await appendPendingIfMissing(filename);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[watch] failed to sync manifest.csv from disk', e);
+    }
+  }
+
+  private async handleAdd(absPath: string) {
+    if (!isPdf(absPath)) return;
+
+    // ignore all initial adds; clients should use /api/resumes for initial state
+    if (!this.ready) return;
+
+    const filename = path.basename(absPath);
+    let label: string | null = null;
+    try {
+      label = await appendPendingIfMissing(filename);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[watch] failed to update manifest.csv', e);
+    }
+
+    const evt: ResumeAddedEvent = {
+      type: 'added',
+      filename,
+      absPath,
+      relPath: toPosixPath(path.relative(process.cwd(), absPath)),
+      label,
+      ts: Date.now(),
+    };
+
+    // Server-side visibility for debugging
+    // eslint-disable-next-line no-console
+    console.log(
+      `[watch] NEW FILE ADDED: ${evt.relPath} (label=${label ?? 'null'})`
+    );
+
+    this.emitter.emit('added', evt);
+  }
+
+  on<K extends keyof ResumeWatcherEvents>(
+    event: K,
+    cb: ResumeWatcherEvents[K]
+  ) {
     this.emitter.on(event, cb as (...args: any[]) => void);
     return () => this.emitter.off(event, cb as (...args: any[]) => void);
   }
@@ -118,5 +156,3 @@ function getSingleton(): ResumeWatcher {
 }
 
 export const resumeWatcher = getSingleton();
-
-
