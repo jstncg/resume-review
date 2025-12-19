@@ -6,6 +6,7 @@ import {
   STATUS_PENDING,
 } from '@/lib/labels';
 import type { Status } from '@/lib/labels';
+import { analyzeResumePdf } from '@/lib/llmAnalyzer';
 
 export type AnalyzeUpdate = {
   filename: string;
@@ -16,6 +17,7 @@ export type AnalyzeUpdate = {
 type AnalyzeJob = {
   filename: string;
   relPath: string;
+  absPath: string;
   onUpdate?: (u: AnalyzeUpdate) => void;
 };
 
@@ -31,10 +33,6 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function pickFinalLabel(): Status {
-  return Math.random() < 0.5 ? STATUS_GOOD_FIT : STATUS_BAD_FIT;
-}
-
 function drain() {
   while (runningCount < MAX_CONCURRENCY && queue.length > 0) {
     const job = queue.shift()!;
@@ -47,7 +45,7 @@ function drain() {
 }
 
 async function runJob(job: AnalyzeJob) {
-  const { filename, relPath, onUpdate } = job;
+  const { filename, relPath, absPath, onUpdate } = job;
   try {
     const labels = await readManifestLabels();
     const current = labels.get(filename);
@@ -62,13 +60,20 @@ async function runJob(job: AnalyzeJob) {
     // eslint-disable-next-line no-console
     console.log(`PDF ${filename} is ${STATUS_IN_PROGRESS} of being analyzed`);
 
+    // LLM workflow (real analysis)
+    const decision = await analyzeResumePdf(absPath);
+
+    // Requirement: pop out after 3 seconds (simulate pipeline duration / pacing)
     await sleep(3000);
 
-    const finalLabel = pickFinalLabel();
+    const finalLabel: Status =
+      decision.label === STATUS_GOOD_FIT ? STATUS_GOOD_FIT : STATUS_BAD_FIT;
     await upsertManifestLabel(filename, finalLabel);
     onUpdate?.({ filename, relPath, label: finalLabel });
     // eslint-disable-next-line no-console
-    console.log(`PDF ${filename} analysis finished: ${finalLabel}`);
+    console.log(
+      `PDF ${filename} analysis finished: ${finalLabel} (reason: ${decision.reason})`
+    );
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('[analysis] job error', e);

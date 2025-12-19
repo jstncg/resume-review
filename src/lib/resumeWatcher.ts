@@ -137,6 +137,7 @@ export class ResumeWatcher {
     enqueuePdfAnalysis({
       filename,
       relPath: evt.relPath,
+      absPath: evt.absPath,
       onUpdate: (u) => {
         this.emitter.emit('label', {
           type: 'label',
