@@ -34,7 +34,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 
-  return new Response(buf, {
+  // `Response` expects a web `BodyInit`. Convert Buffer -> Uint8Array for TS.
+  const body = new Uint8Array(buf);
+  return new Response(body, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${filename}"`,
