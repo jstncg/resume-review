@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ashby like Resume Reviewer
 
-## Getting Started
+## Take-home assignment
 
-First, run the development server:
+Should build application that meets the requirement in this file: [`Andres_-_Take_home_assignment.pdf`](./Andres_-_Take_home_assignment.pdf)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Tech-Stacks
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+    - Next.js : Main Framework
+    - Chokidar : Monitoring the directory
+    - PDF-PARSE : Reading the PDF context
+    - OpenAI : LLM integration
+    - TailwindCSS : Implementing the stylesheet
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Workflow
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+    - When the PDF is being added to the directory
+    - The record (name, "pending") is added to the manifest.csv
+    - The PDF would be enqueued to the analysis pipeline and the record in csv is updated to (name, "in_progress")
+    - When the analysis is finished, the record is being updated to (name, "bad_fit") or (name, "good_fit")
+    - Once the user submits the review on the "good_fit" items, the record is updated to (name, "user_reviewed")
 
-## Learn More
+    The changes on status in csv is reflected to the frontend using SSE(Server-Side-Event).
 
-To learn more about Next.js, take a look at the following resources:
+## Improvements
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+    - Introduce PostgreSQL as Database
+        Create db_resume, db_status, db_review, db_log
+    - Introduce Prisma for ORM
+    - Integrate services for messaging queues and configure re-trying logic
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+    - Implement ShadCN based Stylesheet on the frontend
+    - When user clicks the items, they should be able to see the history of status changes.
 
-## Deploy on Vercel
+## How to run the app
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+    - Create .env (.env.local) with the below fields
+        OPENAI_API_KEY= // OpenAI key
+        ANALYSIS_CONDITION= // Default Resume Analysis condition
+        OPENAI_MODEL= // GPT model for resume analysis
+        ANALYSIS_MAX_CONCURRENCY= // Maximum count that can be processed at once
+    - Without Docker
+        - Install necessary packages
+            npm install
+        - Run the app
+            npm run dev
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+    - With Docker
+        docker compose up --build
