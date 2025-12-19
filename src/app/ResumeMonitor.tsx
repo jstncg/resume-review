@@ -21,6 +21,14 @@ type AddedEvent = {
   ts: number;
 };
 
+type LabelEvent = {
+  type: 'label';
+  filename: string;
+  relPath: string;
+  label: string | null;
+  ts: number;
+};
+
 export function ResumeMonitor() {
   const [dir, setDir] = useState<string>('');
   const [items, setItems] = useState<ResumeItem[]>([]);
@@ -71,6 +79,21 @@ export function ResumeMonitor() {
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error('Bad SSE message', e);
+      }
+    });
+
+    es.addEventListener('label', (msg) => {
+      try {
+        const evt = JSON.parse((msg as MessageEvent).data) as LabelEvent;
+        if (!evt?.relPath || !evt?.filename) return;
+        setItems((prev) =>
+          prev.map((it) =>
+            it.relPath === evt.relPath ? { ...it, label: evt.label } : it
+          )
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('Bad SSE label message', e);
       }
     });
 

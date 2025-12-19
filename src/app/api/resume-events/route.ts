@@ -6,6 +6,7 @@ export async function GET() {
   const encoder = new TextEncoder();
 
   let unsubscribeAdded: null | (() => void) = null;
+  let unsubscribeLabel: null | (() => void) = null;
   let unsubscribeReady: null | (() => void) = null;
   let keepAlive: null | ReturnType<typeof setInterval> = null;
 
@@ -32,6 +33,10 @@ export async function GET() {
         send(evt, 'added');
       });
 
+      unsubscribeLabel = resumeWatcher.on('label', (evt) => {
+        send(evt, 'label');
+      });
+
       if (!resumeWatcher.isReady()) {
         unsubscribeReady = resumeWatcher.on('ready', () => {
           send({ type: 'ready', ts: Date.now() }, 'ready');
@@ -45,6 +50,7 @@ export async function GET() {
     },
     cancel() {
       unsubscribeAdded?.();
+      unsubscribeLabel?.();
       unsubscribeReady?.();
       if (keepAlive) clearInterval(keepAlive);
     },

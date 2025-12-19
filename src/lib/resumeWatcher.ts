@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { appendPendingIfMissing } from '@/lib/manifest';
+import { enqueuePdfAnalysis } from '@/lib/analysisPipeline';
 
 export type ResumeAddedEvent = {
   type: 'added';
@@ -13,8 +14,17 @@ export type ResumeAddedEvent = {
   ts: number;
 };
 
+export type ResumeLabelEvent = {
+  type: 'label';
+  filename: string;
+  relPath: string;
+  label: string | null;
+  ts: number;
+};
+
 type ResumeWatcherEvents = {
   added: (evt: ResumeAddedEvent) => void;
+  label: (evt: ResumeLabelEvent) => void;
   ready: () => void;
 };
 
@@ -122,6 +132,23 @@ export class ResumeWatcher {
     );
 
     this.emitter.emit('added', evt);
+
+    // Kick off analysis line: pending -> in_progress, and emit label update.
+    void enqueuePdfAnalysis(filename)
+      .then((newLabel) => {
+        if (!newLabel) return;
+        this.emitter.emit('label', {
+          type: 'label',
+          filename,
+          relPath: evt.relPath,
+          label: newLabel,
+          ts: Date.now(),
+        } satisfies ResumeLabelEvent);
+      })
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error('[watch] analysis pipeline error', e);
+      });
   }
 
   on<K extends keyof ResumeWatcherEvents>(

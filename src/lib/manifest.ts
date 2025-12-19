@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { STATUS_PENDING } from '@/lib/labels';
 
 export type ManifestLabels = Map<string, string>;
 
@@ -92,12 +93,63 @@ export async function appendPendingIfMissing(
 
     await ensureManifestHeader(manifestPath);
     const needsLeadingNewline = !(await fileEndsWithNewline(manifestPath));
-    const line = `${filename},pending\n`;
+    const line = `${filename},${STATUS_PENDING}\n`;
     await fs.appendFile(
       manifestPath,
       `${needsLeadingNewline ? '\n' : ''}${line}`,
       'utf8'
     );
-    return 'pending';
+    return STATUS_PENDING;
+  });
+}
+
+export async function upsertManifestLabel(
+  filename: string,
+  label: string,
+  manifestPath: string = process.env.MANIFEST_PATH || defaultManifestPath()
+): Promise<string> {
+  return enqueueWrite(async () => {
+    await ensureManifestHeader(manifestPath);
+
+    let raw = '';
+    try {
+      raw = await fs.readFile(manifestPath, 'utf8');
+    } catch {
+      // ensureManifestHeader should have created it, but be defensive
+      raw = 'filename,label\n';
+    }
+
+    const lines = raw.split(/\r?\n/);
+    const out: string[] = [];
+
+    // Normalize header
+    out.push('filename,label');
+
+    let found = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // skip header-ish lines
+      if (line.toLowerCase().startsWith('filename,')) continue;
+
+      const comma = line.indexOf(',');
+      if (comma === -1) continue;
+      const f = line.slice(0, comma).trim();
+      const l = line.slice(comma + 1).trim();
+      if (!f) continue;
+
+      if (f === filename) {
+        out.push(`${filename},${label}`);
+        found = true;
+      } else {
+        out.push(`${f},${l}`);
+      }
+    }
+
+    if (!found) out.push(`${filename},${label}`);
+
+    await fs.writeFile(manifestPath, `${out.join('\n')}\n`, 'utf8');
+    return label;
   });
 }
