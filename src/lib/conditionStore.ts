@@ -5,7 +5,7 @@ type ConditionState = {
 };
 
 const DEFAULT_CONDITION =
-  "Candidate should have 5+ years of experience working as a software engineer.";
+  'Candidate should have 5+ years of experience working as a software engineer.';
 
 function initialState(): ConditionState {
   const condition = process.env.ANALYSIS_CONDITION || DEFAULT_CONDITION;
@@ -33,5 +33,3 @@ export function setCondition(nextCondition: string): ConditionState {
   };
   return g.__sentraConditionState;
 }
-
-
