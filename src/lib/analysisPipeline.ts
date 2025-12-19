@@ -18,6 +18,7 @@ type AnalyzeJob = {
   filename: string;
   relPath: string;
   absPath: string;
+  condition: string;
   onUpdate?: (u: AnalyzeUpdate) => void;
 };
 
@@ -45,7 +46,7 @@ function drain() {
 }
 
 async function runJob(job: AnalyzeJob) {
-  const { filename, relPath, absPath, onUpdate } = job;
+  const { filename, relPath, absPath, condition, onUpdate } = job;
   try {
     const labels = await readManifestLabels();
     const current = labels.get(filename);
@@ -61,7 +62,7 @@ async function runJob(job: AnalyzeJob) {
     console.log(`PDF ${filename} is ${STATUS_IN_PROGRESS} of being analyzed`);
 
     // LLM workflow (real analysis)
-    const decision = await analyzeResumePdf(absPath);
+    const decision = await analyzeResumePdf(absPath, condition);
 
     // Requirement: pop out after 3 seconds (simulate pipeline duration / pacing)
     await sleep(3000);

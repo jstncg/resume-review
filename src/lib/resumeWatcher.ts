@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { appendPendingIfMissing } from '@/lib/manifest';
 import { enqueuePdfAnalysis } from '@/lib/analysisPipeline';
+import { getConditionState } from '@/lib/conditionStore';
 
 export type ResumeAddedEvent = {
   type: 'added';
@@ -134,10 +135,12 @@ export class ResumeWatcher {
     this.emitter.emit('added', evt);
 
     // Kick off analysis line: pending -> in_progress, and emit label update.
+    const conditionSnapshot = getConditionState().condition;
     enqueuePdfAnalysis({
       filename,
       relPath: evt.relPath,
       absPath: evt.absPath,
+      condition: conditionSnapshot,
       onUpdate: (u) => {
         this.emitter.emit('label', {
           type: 'label',

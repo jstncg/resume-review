@@ -1,4 +1,5 @@
-import { ResumeMonitor } from "./ResumeMonitor";
+import { ResumeMonitor } from './ResumeMonitor';
+import { ConditionForm } from './ConditionForm';
 
 export default function Home() {
   return (
@@ -9,11 +10,13 @@ export default function Home() {
             Sentra Resume Monitor
           </h1>
           <p className="text-zinc-600 dark:text-zinc-400">
-            Add a new PDF to <code className="font-mono">dataset/sentra_test_resumes</code>{" "}
-            and it will show up here in real time.
+            Add a new PDF to{' '}
+            <code className="font-mono">dataset/sentra_test_resumes</code> and
+            it will show up here in real time.
           </p>
         </header>
 
+        <ConditionForm />
         <ResumeMonitor />
       </main>
     </div>

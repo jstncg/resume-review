@@ -14,13 +14,6 @@ export type AnalyzeDecision = {
   reason: string;
 };
 
-const DEFAULT_CONDITION =
-  'Candidate should have 5+ years of experience working as a software engineer.';
-
-function getCondition() {
-  return process.env.ANALYSIS_CONDITION || DEFAULT_CONDITION;
-}
-
 function getModel() {
   // Default to a commonly available model; can be overridden via OPENAI_MODEL.
   return process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -144,9 +137,9 @@ async function decideWithChatCompletions(
 }
 
 export async function analyzeResumePdf(
-  absPath: string
+  absPath: string,
+  condition: string
 ): Promise<AnalyzeDecision> {
-  const condition = getCondition();
   const resumeText = await extractPdfText(absPath);
 
   const client = getClient();
