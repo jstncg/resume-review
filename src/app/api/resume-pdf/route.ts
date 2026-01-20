@@ -1,19 +1,12 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { isSafeFilename } from '@/lib/utils';
 
 export const runtime = 'nodejs';
 
 function resumesDir() {
   return path.resolve(process.cwd(), 'dataset', 'sentra_test_resumes');
-}
-
-function isSafeFilename(filename: string) {
-  if (!filename) return false;
-  if (filename.includes('/') || filename.includes('\\')) return false;
-  if (filename.includes('..')) return false;
-  if (path.extname(filename).toLowerCase() !== '.pdf') return false;
-  return true;
 }
 
 export async function GET(req: Request) {
@@ -34,7 +27,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'File not found' }, { status: 404 });
   }
 
-  // `Response` expects a web `BodyInit`. Convert Buffer -> Uint8Array for TS.
   const body = new Uint8Array(buf);
   return new Response(body, {
     headers: {

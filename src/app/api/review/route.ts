@@ -5,13 +5,19 @@ import { STATUS_USER_REVIEWED_PREFIX } from '@/lib/labels';
 
 export const runtime = 'nodejs';
 
-function sanitizeReview(input: string) {
+type ReviewRequest = {
+  filename?: string;
+  relPath?: string;
+  review?: string;
+};
+
+function sanitizeReview(input: string): string {
   // Keep it single-line for CSV friendliness and UI rendering.
   return input.replace(/\r?\n/g, ' ').trim();
 }
 
 export async function POST(req: Request) {
-  let body: any;
+  let body: ReviewRequest;
   try {
     body = await req.json();
   } catch {

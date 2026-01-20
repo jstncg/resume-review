@@ -1,18 +1,11 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { NextResponse } from 'next/server';
+import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { resumeWatcher } from '@/lib/resumeWatcher';
 import { readManifestLabels } from '@/lib/manifest';
+import { isPdf, toPosixPath } from '@/lib/utils';
 
 export const runtime = 'nodejs';
-
-function isPdf(name: string) {
-  return path.extname(name).toLowerCase() === '.pdf';
-}
-
-function toPosixPath(p: string) {
-  return p.split(path.sep).join('/');
-}
 
 export async function GET() {
   const dir = resumeWatcher.getWatchDir();

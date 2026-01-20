@@ -2,9 +2,11 @@ import chokidar from 'chokidar';
 import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { appendPendingIfMissing } from '@/lib/manifest';
+import { appendPendingIfMissing, readManifestLabels, cleanOrphanEntries } from '@/lib/manifest';
 import { enqueuePdfAnalysis } from '@/lib/analysisPipeline';
 import { getConditionState } from '@/lib/conditionStore';
+import { STATUS_IN_PROGRESS, STATUS_PENDING } from '@/lib/labels';
+import { isPdf, toPosixPath } from '@/lib/utils';
 
 export type ResumeAddedEvent = {
   type: 'added';
@@ -29,22 +31,15 @@ type ResumeWatcherEvents = {
   ready: () => void;
 };
 
-function isPdf(filePath: string) {
-  return path.extname(filePath).toLowerCase() === '.pdf';
-}
-
 function defaultWatchDir() {
   return path.resolve(process.cwd(), 'dataset', 'sentra_test_resumes');
-}
-
-function toPosixPath(p: string) {
-  return p.split(path.sep).join('/');
 }
 
 export class ResumeWatcher {
   private emitter = new EventEmitter();
   private ready = false;
   private watchDir: string;
+  private reconciled = false;
 
   constructor(watchDir: string) {
     this.watchDir = watchDir;
@@ -77,27 +72,58 @@ export class ResumeWatcher {
       // manifest.csv (e.g. added while the server was down), add them as pending.
       void this.syncManifestFromDisk();
       this.emitter.emit('ready');
-      // eslint-disable-next-line no-console
       console.log(
         `[watch] Resume watcher ready (SSE events enabled) - dir=${this.watchDir}`
       );
     });
 
     watcher.on('error', (err) => {
-      // eslint-disable-next-line no-console
       console.error('[watch] watcher error', err);
     });
   }
 
   private async syncManifestFromDisk() {
     try {
+      // First, clean up orphan entries (files that no longer exist)
+      const cleanResult = await cleanOrphanEntries(this.watchDir);
+      if (cleanResult.removed.length > 0) {
+        console.log(`[watch] Cleaned ${cleanResult.removed.length} orphan manifest entries`);
+      }
+
       const names = await fs.readdir(this.watchDir);
       const pdfs = names.filter((n) => n.toLowerCase().endsWith('.pdf'));
       for (const filename of pdfs) {
         await appendPendingIfMissing(filename);
       }
+
+      // If the server restarted while there were pending/in_progress items,
+      // re-enqueue them so they continue/finish analysis without requiring a new file add.
+      if (!this.reconciled) {
+        this.reconciled = true;
+        const labels = await readManifestLabels();
+        const conditionSnapshot = getConditionState().condition;
+        for (const filename of pdfs) {
+          const label = labels.get(filename) ?? STATUS_PENDING;
+          if (label !== STATUS_PENDING && label !== STATUS_IN_PROGRESS) continue;
+          const absPath = path.join(this.watchDir, filename);
+          enqueuePdfAnalysis({
+            filename,
+            relPath: toPosixPath(path.relative(process.cwd(), absPath)),
+            absPath,
+            condition: conditionSnapshot,
+            onUpdate: (u) => {
+              this.emitter.emit('label', {
+                type: 'label',
+                filename: u.filename,
+                relPath: u.relPath,
+                label: u.label,
+                ts: Date.now(),
+              } satisfies ResumeLabelEvent);
+            },
+          });
+        }
+      }
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('[watch] failed to sync manifest.csv from disk', e);
     }
   }
@@ -113,7 +139,6 @@ export class ResumeWatcher {
     try {
       label = await appendPendingIfMissing(filename);
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('[watch] failed to update manifest.csv', e);
     }
 
@@ -127,7 +152,6 @@ export class ResumeWatcher {
     };
 
     // Server-side visibility for debugging
-    // eslint-disable-next-line no-console
     console.log(
       `[watch] NEW FILE ADDED: ${evt.relPath} (label=${label ?? 'null'})`
     );
@@ -157,8 +181,8 @@ export class ResumeWatcher {
     event: K,
     cb: ResumeWatcherEvents[K]
   ) {
-    this.emitter.on(event, cb as (...args: any[]) => void);
-    return () => this.emitter.off(event, cb as (...args: any[]) => void);
+    this.emitter.on(event, cb as (...args: unknown[]) => void);
+    return () => this.emitter.off(event, cb as (...args: unknown[]) => void);
   }
 
   emitLabelUpdate(
@@ -201,21 +225,5 @@ export const resumeWatcher = getSingleton();
 export function emitResumeLabelUpdate(
   evt: Omit<ResumeLabelEvent, 'type' | 'ts'> & { ts?: number }
 ) {
-  const rw: any = resumeWatcher as any;
-
-  if (typeof rw.emitLabelUpdate === 'function') {
-    rw.emitLabelUpdate(evt);
-    return;
-  }
-
-  const emitter: any = rw?.emitter;
-  if (emitter?.emit) {
-    emitter.emit('label', {
-      type: 'label',
-      filename: evt.filename,
-      relPath: evt.relPath,
-      label: evt.label,
-      ts: evt.ts ?? Date.now(),
-    } satisfies ResumeLabelEvent);
-  }
+  resumeWatcher.emitLabelUpdate(evt);
 }

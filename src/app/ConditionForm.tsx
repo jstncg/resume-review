@@ -34,7 +34,6 @@ export function ConditionForm() {
         reset({ condition: json.condition });
       })
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.error(e);
         setError('Failed to load condition.');
       });
@@ -59,8 +58,9 @@ export function ConditionForm() {
       const json = (await res.json()) as ConditionState;
       setServerState(json);
       reset({ condition: json.condition });
-    } catch (e: any) {
-      setError(e?.message || 'Failed to save condition.');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to save condition.';
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -90,10 +90,10 @@ export function ConditionForm() {
       <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3">
         <textarea
           className="min-h-[96px] w-full resize-y rounded-xl border border-black/[.12] bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-black/[.15] dark:border-white/[.18] dark:bg-black dark:text-zinc-50 dark:focus:ring-white/[.18]"
-          placeholder='e.g. "Should have 5+ years of experience as a software engineer"'
+          placeholder='e.g. "3+ years FAANG/top-tier startup backend experience, no India in last 3 years"'
           {...register('condition', {
             required: true,
-            maxLength: 255,
+            maxLength: 500,
             validate: (v) => v.trim().length > 0,
           })}
         />
@@ -109,7 +109,7 @@ export function ConditionForm() {
               </span>
             ) : formState.errors.condition?.type === 'maxLength' ? (
               <span className="text-red-600 dark:text-red-400">
-                Condition must be ≤ 255 characters.
+                Condition must be ≤ 500 characters.
               </span>
             ) : !error && formState.isSubmitted && formState.isValid ? (
               <span>Saved.</span>
@@ -118,7 +118,7 @@ export function ConditionForm() {
 
           <div className="flex items-center gap-3">
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              {conditionValue.length}/255
+              {conditionValue.length}/500
             </span>
             <button
               type="submit"
