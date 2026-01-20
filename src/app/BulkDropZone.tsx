@@ -224,9 +224,8 @@ export function BulkDropZone({ onUploadComplete }: BulkDropZoneProps) {
         ref={folderInputRef}
         type="file"
         accept=".pdf,application/pdf"
-        // @ts-expect-error webkitdirectory is not in the types but works in browsers
+        /* @ts-expect-error webkitdirectory works in browsers */
         webkitdirectory=""
-        // @ts-expect-error directory is not in the types but works in some browsers
         directory=""
         multiple
         onChange={handleFolderInput}

@@ -166,7 +166,7 @@ export async function GET() {
 
     const pdfFilename = `passed-candidates-${new Date().toISOString().slice(0, 10)}.pdf`;
 
-    return new Response(pdfBytes, {
+    return new Response(Buffer.from(pdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${pdfFilename}"`,

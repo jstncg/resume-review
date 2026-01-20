@@ -5,49 +5,31 @@ import { parseIdsFromFilename, getAshbyProfileUrl } from '@/lib/utils';
 
 export const runtime = 'nodejs';
 
-type CandidateMetadata = {
+type Metadata = {
   candidate?: { name: string };
   jobId?: string;
-  raw?: {
-    status?: string;
-    currentInterviewStage?: { title: string };
-  };
+  raw?: { status?: string; currentInterviewStage?: { title: string } };
 };
 
-/**
- * GET /api/candidate-meta?filename=...
- * Returns metadata for a candidate including their Ashby profile URL.
- */
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const filename = url.searchParams.get('filename');
+  const filename = new URL(req.url).searchParams.get('filename');
 
   if (!filename) {
-    return NextResponse.json(
-      { error: 'Missing filename parameter' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'Missing filename' }, { status: 400 });
   }
 
   const { candidateId, applicationId } = parseIdsFromFilename(filename);
 
   if (!candidateId || !applicationId) {
-    return NextResponse.json(
-      { error: 'Invalid filename format' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'Invalid filename format' }, { status: 400 });
   }
 
-  // Try to load metadata file
-  const metadataDir = path.resolve(process.cwd(), 'dataset', 'ashby_metadata');
-  const metadataPath = path.join(metadataDir, `${candidateId}.json`);
-
-  let metadata: CandidateMetadata | null = null;
+  let metadata: Metadata | null = null;
   try {
-    const raw = await fs.readFile(metadataPath, 'utf8');
-    metadata = JSON.parse(raw);
+    const metaPath = path.join(process.cwd(), 'dataset', 'ashby_metadata', `${candidateId}.json`);
+    metadata = JSON.parse(await fs.readFile(metaPath, 'utf8'));
   } catch {
-    // Metadata file doesn't exist
+    // No metadata
   }
 
   return NextResponse.json({

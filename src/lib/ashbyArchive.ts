@@ -1,29 +1,22 @@
+/**
+ * Ashby Archive Operations
+ */
+
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ashbyRpc, isAshbyConfigured } from '@/lib/ashbyClient';
 import { parseIdsFromFilename } from '@/lib/utils';
 
-/**
- * Get applicationId from filename or by looking up metadata file.
- */
 async function getApplicationId(filename: string): Promise<string | null> {
   const { candidateId, applicationId } = parseIdsFromFilename(filename);
 
-  if (applicationId) {
-    return applicationId;
-  }
+  if (applicationId) return applicationId;
 
-  // Fallback: look up from metadata using candidateId
+  // Fallback: lookup from metadata
   if (candidateId) {
-    const metaPath = path.join(
-      process.cwd(),
-      'dataset',
-      'ashby_metadata',
-      `${candidateId}.json`
-    );
     try {
-      const raw = await fs.readFile(metaPath, 'utf8');
-      const meta = JSON.parse(raw);
+      const metaPath = path.join(process.cwd(), 'dataset', 'ashby_metadata', `${candidateId}.json`);
+      const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
       return meta.application?.id || null;
     } catch {
       return null;
@@ -33,79 +26,49 @@ async function getApplicationId(filename: string): Promise<string | null> {
   return null;
 }
 
-/**
- * Archive a candidate's application in Ashby.
- *
- * @param filename - The PDF filename (used to extract applicationId)
- * @returns true if archived successfully, false otherwise
- */
 export async function archiveInAshby(filename: string): Promise<boolean> {
-  // Check if archiving is enabled
-  if (process.env.AUTO_ARCHIVE_REJECTED !== 'true') {
-    return false;
-  }
-
-  // Check if we have Ashby credentials
+  if (process.env.AUTO_ARCHIVE_REJECTED !== 'true') return false;
   if (!isAshbyConfigured()) {
-    console.warn('[ashby-archive] ASHBY_API_KEY not set, skipping archive');
+    console.warn('[archive] ASHBY_API_KEY not set');
     return false;
   }
 
   const applicationId = await getApplicationId(filename);
   if (!applicationId) {
-    console.warn(
-      `[ashby-archive] No applicationId found for ${filename}, skipping archive`
-    );
+    console.warn(`[archive] No applicationId for ${filename}`);
     return false;
   }
 
-  const archiveReasonId = process.env.ASHBY_ARCHIVE_REASON_ID;
-
-  // Build the payload
   const payload: Record<string, string> = { applicationId };
-  if (archiveReasonId) {
-    payload.archiveReasonId = archiveReasonId;
+  if (process.env.ASHBY_ARCHIVE_REASON_ID) {
+    payload.archiveReasonId = process.env.ASHBY_ARCHIVE_REASON_ID;
   }
 
-  // Try application.setArchiveReason first (most reliable for archiving)
+  // Try setArchiveReason first
   try {
     const result = await ashbyRpc('application.setArchiveReason', payload);
-
     if (result?.success) {
-      console.log(
-        `[ashby-archive] Successfully archived application ${applicationId}`
-      );
+      console.log(`[archive] Archived ${applicationId}`);
       return true;
     }
-
-    if (result?.error) {
-      console.warn(
-        `[ashby-archive] application.setArchiveReason failed: ${result.error}`
-      );
-    }
   } catch (err) {
-    console.error('[ashby-archive] application.setArchiveReason error:', err);
+    console.error('[archive] setArchiveReason failed:', err);
   }
 
-  // Fallback: try application.changeStage to an archived stage
+  // Fallback: changeStage to Archived
   try {
-    const fallbackResult = await ashbyRpc('application.changeStage', {
+    const fallback = await ashbyRpc('application.changeStage', {
       applicationId,
       stageType: 'Archived',
     });
-
-    if (fallbackResult?.success) {
-      console.log(
-        `[ashby-archive] Successfully archived via changeStage: ${applicationId}`
-      );
+    if (fallback?.success) {
+      console.log(`[archive] Archived via changeStage: ${applicationId}`);
       return true;
     }
   } catch (err) {
-    console.error('[ashby-archive] application.changeStage error:', err);
+    console.error('[archive] changeStage failed:', err);
   }
 
-  console.error(
-    `[ashby-archive] Failed to archive application ${applicationId}`
-  );
+  console.error(`[archive] Failed to archive ${applicationId}`);
   return false;
 }

@@ -7,25 +7,17 @@ export async function GET() {
   return NextResponse.json(getConditionState());
 }
 
-type ConditionRequest = {
-  condition?: string;
-};
-
 export async function POST(req: Request) {
-  let body: ConditionRequest;
+  let body: { condition?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const condition = body?.condition;
-  if (typeof condition !== 'string') {
-    return NextResponse.json(
-      { error: 'Expected { condition: string }' },
-      { status: 400 }
-    );
+  if (typeof body?.condition !== 'string') {
+    return NextResponse.json({ error: 'condition string required' }, { status: 400 });
   }
 
-  return NextResponse.json(setCondition(condition));
+  return NextResponse.json(setCondition(body.condition));
 }

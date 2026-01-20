@@ -12,12 +12,11 @@ export async function GET() {
   const names = await fs.readdir(dir);
   const pdfs = names.filter(isPdf).sort((a, b) => a.localeCompare(b));
   const labels = await readManifestLabels();
-
   const rootRel = path.relative(process.cwd(), dir);
 
   return NextResponse.json({
     dir,
-    items: pdfs.map((filename) => ({
+    items: pdfs.map(filename => ({
       filename,
       relPath: toPosixPath(path.join(rootRel, filename)),
       label: labels.get(filename) ?? null,

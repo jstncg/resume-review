@@ -9,43 +9,33 @@ export async function GET() {
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
   if (!apiKey) {
-    return NextResponse.json(
-      { ok: false, error: 'Missing OPENAI_API_KEY', model },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: 'Missing OPENAI_API_KEY', model }, { status: 500 });
   }
 
   const client = new OpenAI({ apiKey });
 
   try {
-    // Ultra-small request just to validate auth + model access.
-    const resp = await (client as unknown as { responses: { create: (opts: unknown) => Promise<unknown> } }).responses.create({
+    type ResponsesAPI = { responses: { create: (opts: unknown) => Promise<unknown> } };
+    type ResponseResult = { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
+
+    const resp = await (client as unknown as ResponsesAPI).responses.create({
       model,
       input: 'Reply with the single word: ok',
       temperature: 0,
       max_output_tokens: 5,
     });
 
-    const respObj = resp as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
-    const text =
-      respObj?.output_text ??
-      respObj?.output
-        ?.map((o) => o?.content?.map((c) => c?.text).join(''))
-        .join('') ??
-      '';
+    const r = resp as ResponseResult;
+    const text = r?.output_text ?? r?.output?.map(o => o?.content?.map(c => c?.text).join('')).join('') ?? '';
 
-    return NextResponse.json({
-      ok: true,
-      model,
-      output: truncate(String(text || ''), 80),
-    });
+    return NextResponse.json({ ok: true, model, output: truncate(String(text || ''), 80) });
   } catch (e) {
     const err = e as { code?: string; error?: { code?: string }; message?: string };
-    const code = err?.code || err?.error?.code || null;
-    const message = err?.message || String(e);
-    return NextResponse.json(
-      { ok: false, model, code, error: truncate(message, 500) },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      ok: false,
+      model,
+      code: err?.code || err?.error?.code || null,
+      error: truncate(err?.message || String(e), 500),
+    }, { status: 500 });
   }
 }

@@ -8,75 +8,41 @@ import { parseIdsFromFilename } from '@/lib/utils';
 
 export const runtime = 'nodejs';
 
-/**
- * POST /api/archive-rejected
- * Archives all rejected candidates in Ashby and removes them from local storage.
- */
+const RESUME_DIR = path.join(process.cwd(), 'dataset', 'sentra_test_resumes');
+
 export async function POST() {
-  const resumeDir = path.join(process.cwd(), 'dataset', 'sentra_test_resumes');
-  
   try {
-    // Get all files with bad_fit label
     const labels = await readManifestLabels();
-    const rejectedFiles: string[] = [];
-    
-    for (const [filename, label] of labels.entries()) {
-      if (label === STATUS_BAD_FIT) {
-        rejectedFiles.push(filename);
-      }
+    const rejected = [...labels.entries()].filter(([, l]) => l === STATUS_BAD_FIT).map(([f]) => f);
+
+    if (rejected.length === 0) {
+      return NextResponse.json({ ok: true, archived: 0, failed: 0, message: 'No rejected candidates' });
     }
 
-    if (rejectedFiles.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        archived: 0,
-        failed: 0,
-        message: 'No rejected candidates to archive',
-      });
-    }
-
-    let archived = 0;
-    let failed = 0;
+    let archived = 0, failed = 0;
     const results: { filename: string; status: 'archived' | 'failed'; error?: string }[] = [];
 
-    for (const filename of rejectedFiles) {
+    for (const filename of rejected) {
       const ids = parseIdsFromFilename(filename);
-      
       if (!ids?.applicationId) {
-        results.push({ filename, status: 'failed', error: 'Could not extract application ID' });
+        results.push({ filename, status: 'failed', error: 'No application ID' });
         failed++;
         continue;
       }
 
       try {
-        // Archive in Ashby
-        const success = await archiveInAshby(filename);
-        
-        if (success) {
-          // Delete local file
-          const filePath = path.join(resumeDir, filename);
-          try {
-            await fs.unlink(filePath);
-          } catch {
-            // File might already be deleted, ignore
-          }
-          
-          // Remove from manifest
+        if (await archiveInAshby(filename)) {
+          await fs.unlink(path.join(RESUME_DIR, filename)).catch(() => {});
           await removeManifestEntry(filename);
-          
-          archived++;
           results.push({ filename, status: 'archived' });
+          archived++;
         } else {
+          results.push({ filename, status: 'failed', error: 'Archive returned false' });
           failed++;
-          results.push({ filename, status: 'failed', error: 'archiveInAshby returned false' });
         }
       } catch (err) {
+        results.push({ filename, status: 'failed', error: err instanceof Error ? err.message : 'Unknown' });
         failed++;
-        results.push({ 
-          filename, 
-          status: 'failed', 
-          error: err instanceof Error ? err.message : 'Unknown error' 
-        });
       }
     }
 
@@ -84,43 +50,21 @@ export async function POST() {
       ok: true,
       archived,
       failed,
-      total: rejectedFiles.length,
-      message: `Archived ${archived} candidates${failed > 0 ? `, ${failed} failed` : ''}`,
+      total: rejected.length,
+      message: `Archived ${archived}${failed > 0 ? `, ${failed} failed` : ''}`,
       results,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      { ok: false, error: `Failed to archive rejected candidates: ${message}` },
-      { status: 500 }
-    );
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'Unknown' }, { status: 500 });
   }
 }
 
-/**
- * GET /api/archive-rejected
- * Returns count of rejected candidates that can be archived.
- */
 export async function GET() {
   try {
     const labels = await readManifestLabels();
-    let count = 0;
-    
-    for (const label of labels.values()) {
-      if (label === STATUS_BAD_FIT) {
-        count++;
-      }
-    }
-
-    return NextResponse.json({
-      ok: true,
-      count,
-    });
+    const count = [...labels.values()].filter(l => l === STATUS_BAD_FIT).length;
+    return NextResponse.json({ ok: true, count });
   } catch {
-    return NextResponse.json({
-      ok: true,
-      count: 0,
-    });
+    return NextResponse.json({ ok: true, count: 0 });
   }
 }
-

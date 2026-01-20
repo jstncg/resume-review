@@ -4,61 +4,33 @@ import path from 'node:path';
 
 export const runtime = 'nodejs';
 
-/**
- * POST /api/clear-rejected
- * Clears the rejected candidates tracking file so they can be re-pulled and re-analyzed.
- */
-export async function POST() {
-  const rejectedPath = path.join(process.cwd(), 'dataset', 'rejected_candidates.json');
+const REJECTED_PATH = path.join(process.cwd(), 'dataset', 'rejected_candidates.json');
 
+export async function POST() {
   try {
-    // Check if file exists
+    let count = 0;
     try {
-      await fs.stat(rejectedPath);
+      const raw = await fs.readFile(REJECTED_PATH, 'utf8');
+      count = Object.keys(JSON.parse(raw).candidates || {}).length;
     } catch {
-      return NextResponse.json({
-        ok: true,
-        cleared: 0,
-        message: 'No rejected candidates file found',
-      });
+      return NextResponse.json({ ok: true, cleared: 0, message: 'No rejected candidates file' });
     }
 
-    // Read current file to get count
-    const raw = await fs.readFile(rejectedPath, 'utf8');
-    const data = JSON.parse(raw);
-    const count = Object.keys(data.candidates || {}).length;
-
-    // Reset the file to empty state
-    const emptyData = {
-      version: 1,
-      lastUpdated: new Date().toISOString(),
-      candidates: {},
-    };
-    await fs.writeFile(rejectedPath, JSON.stringify(emptyData, null, 2), 'utf8');
-
-    return NextResponse.json({
-      ok: true,
-      cleared: count,
-      message: `Cleared ${count} rejected candidate(s). They can now be re-pulled.`,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      { ok: false, error: `Failed to clear rejected candidates: ${message}` },
-      { status: 500 }
+    await fs.writeFile(
+      REJECTED_PATH,
+      JSON.stringify({ version: 1, lastUpdated: new Date().toISOString(), candidates: {} }, null, 2),
+      'utf8'
     );
+
+    return NextResponse.json({ ok: true, cleared: count, message: `Cleared ${count} rejected candidate(s)` });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'Unknown' }, { status: 500 });
   }
 }
 
-/**
- * GET /api/clear-rejected
- * Returns the count of currently rejected candidates.
- */
 export async function GET() {
-  const rejectedPath = path.join(process.cwd(), 'dataset', 'rejected_candidates.json');
-
   try {
-    const raw = await fs.readFile(rejectedPath, 'utf8');
+    const raw = await fs.readFile(REJECTED_PATH, 'utf8');
     const data = JSON.parse(raw);
     const candidates = data.candidates || {};
     const count = Object.keys(candidates).length;
@@ -66,17 +38,9 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       count,
-      candidates: Object.entries(candidates).map(([id, info]) => ({
-        candidateId: id,
-        ...(info as object),
-      })),
+      candidates: Object.entries(candidates).map(([id, info]) => ({ candidateId: id, ...(info as object) })),
     });
   } catch {
-    return NextResponse.json({
-      ok: true,
-      count: 0,
-      candidates: [],
-    });
+    return NextResponse.json({ ok: true, count: 0, candidates: [] });
   }
 }
-

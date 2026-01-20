@@ -1,6 +1,10 @@
+/**
+ * Bulk Resume File Watcher
+ */
+
 import chokidar from 'chokidar';
 import { EventEmitter } from 'node:events';
-import { promises as fs, mkdirSync, existsSync } from 'node:fs';
+import { promises as fs, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import {
   appendBulkPendingIfMissing,
@@ -29,33 +33,20 @@ export type BulkResumeLabelEvent = {
   ts: number;
 };
 
-type BulkResumeWatcherEvents = {
-  added: (evt: BulkResumeAddedEvent) => void;
-  label: (evt: BulkResumeLabelEvent) => void;
-  ready: () => void;
-};
-
 export class BulkResumeWatcher {
   private emitter = new EventEmitter();
   private ready = false;
   private watchDir: string;
-  private reconciled = false;
-  private currentCondition: string = '';
+  private condition = '';
 
   constructor(watchDir: string) {
     this.watchDir = watchDir;
   }
 
-  setCondition(condition: string) {
-    this.currentCondition = condition;
-  }
+  setCondition(condition: string): void { this.condition = condition; }
+  getCondition(): string { return this.condition; }
 
-  getCondition() {
-    return this.currentCondition;
-  }
-
-  start() {
-    // Ensure the directory exists (synchronous to avoid blocking issues)
+  start(): void {
     if (!existsSync(this.watchDir)) {
       mkdirSync(this.watchDir, { recursive: true });
     }
@@ -63,213 +54,138 @@ export class BulkResumeWatcher {
     const watcher = chokidar.watch(this.watchDir, {
       persistent: true,
       ignoreInitial: false,
-      awaitWriteFinish: {
-        stabilityThreshold: 750,
-        pollInterval: 100,
-      },
+      awaitWriteFinish: { stabilityThreshold: 750, pollInterval: 100 },
       ignored: (p) => {
         const base = path.basename(p);
-        return (
-          base.startsWith('.') ||
-          base.endsWith('~') ||
-          base.endsWith('.tmp') ||
-          base.endsWith('.crdownload')
-        );
+        return base.startsWith('.') || base.endsWith('~') || base.endsWith('.tmp') || base.endsWith('.crdownload');
       },
     });
 
     watcher.on('add', (absPath) => void this.handleAdd(absPath));
-
     watcher.on('ready', () => {
       this.ready = true;
-      void this.syncManifestFromDisk();
+      void this.syncManifest();
       this.emitter.emit('ready');
-      console.log(
-        `[bulk-watch] Bulk resume watcher ready - dir=${this.watchDir}`
-      );
+      console.log(`[bulk-watch] Ready - dir=${this.watchDir}`);
     });
-
-    watcher.on('error', (err) => {
-      console.error('[bulk-watch] watcher error', err);
-    });
+    watcher.on('error', (err) => console.error('[bulk-watch] Error:', err));
   }
 
-  private async syncManifestFromDisk() {
+  private async syncManifest(): Promise<void> {
     try {
-      // Clean up orphan entries
-      const cleanResult = await cleanBulkOrphanEntries(this.watchDir);
-      if (cleanResult.removed.length > 0) {
-        console.log(`[bulk-watch] Cleaned ${cleanResult.removed.length} orphan manifest entries`);
-      }
-
+      await cleanBulkOrphanEntries(this.watchDir);
       const names = await fs.readdir(this.watchDir);
-      const pdfs = names.filter((n) => n.toLowerCase().endsWith('.pdf'));
-      for (const filename of pdfs) {
-        await appendBulkPendingIfMissing(filename);
-      }
-
-      // Re-enqueue pending/in_progress items on restart
-      if (!this.reconciled) {
-        this.reconciled = true;
-        // Don't auto-analyze on startup - let user trigger manually
+      for (const n of names.filter(n => n.toLowerCase().endsWith('.pdf'))) {
+        await appendBulkPendingIfMissing(n);
       }
     } catch (e) {
-      console.error('[bulk-watch] failed to sync manifest from disk', e);
+      console.error('[bulk-watch] Sync error:', e);
     }
   }
 
-  private async handleAdd(absPath: string) {
-    if (!isPdf(absPath)) return;
-    if (!this.ready) return;
+  private async handleAdd(absPath: string): Promise<void> {
+    if (!isPdf(absPath) || !this.ready) return;
 
     const filename = path.basename(absPath);
     let label: string | null = null;
+
     try {
       label = await appendBulkPendingIfMissing(filename);
     } catch (e) {
-      console.error('[bulk-watch] failed to update manifest', e);
+      console.error('[bulk-watch] Manifest error:', e);
     }
 
-    const evt: BulkResumeAddedEvent = {
-      type: 'added',
-      filename,
-      absPath,
-      relPath: toPosixPath(path.relative(process.cwd(), absPath)),
-      label,
-      ts: Date.now(),
-    };
+    const relPath = toPosixPath(path.relative(process.cwd(), absPath));
+    console.log(`[bulk-watch] NEW FILE: ${relPath}`);
 
-    console.log(
-      `[bulk-watch] NEW FILE ADDED: ${evt.relPath} (label=${label ?? 'null'})`
-    );
+    this.emitter.emit('added', { type: 'added', filename, absPath, relPath, label, ts: Date.now() });
 
-    this.emitter.emit('added', evt);
-
-    // Auto-start analysis if a condition is set
-    if (this.currentCondition) {
-      enqueueBulkPdfAnalysis({
-        filename,
-        relPath: evt.relPath,
-        absPath: evt.absPath,
-        condition: this.currentCondition,
-        onUpdate: (u) => {
-          this.emitter.emit('label', {
-            type: 'label',
-            filename: u.filename,
-            relPath: u.relPath,
-            label: u.label,
-            ts: Date.now(),
-          } satisfies BulkResumeLabelEvent);
-        },
-      });
-    }
-  }
-
-  on<K extends keyof BulkResumeWatcherEvents>(
-    event: K,
-    cb: BulkResumeWatcherEvents[K]
-  ) {
-    this.emitter.on(event, cb as (...args: unknown[]) => void);
-    return () => this.emitter.off(event, cb as (...args: unknown[]) => void);
-  }
-
-  emitLabelUpdate(
-    evt: Omit<BulkResumeLabelEvent, 'type' | 'ts'> & { ts?: number }
-  ) {
-    this.emitter.emit('label', {
-      type: 'label',
-      filename: evt.filename,
-      relPath: evt.relPath,
-      label: evt.label,
-      ts: evt.ts ?? Date.now(),
-    } satisfies BulkResumeLabelEvent);
-  }
-
-  isReady() {
-    return this.ready;
-  }
-
-  getWatchDir() {
-    return this.watchDir;
-  }
-
-  // Trigger analysis for all pending items
-  async analyzeAllPending(condition: string) {
-    this.currentCondition = condition;
-    
-    const names = await fs.readdir(this.watchDir);
-    const pdfs = names.filter((n) => n.toLowerCase().endsWith('.pdf'));
-    const labels = await readBulkManifestLabels();
-    
-    let enqueued = 0;
-    for (const filename of pdfs) {
-      const label = labels.get(filename) ?? STATUS_PENDING;
-      if (label !== STATUS_PENDING && label !== STATUS_IN_PROGRESS) continue;
-      
-      const absPath = path.join(this.watchDir, filename);
-      const relPath = toPosixPath(path.relative(process.cwd(), absPath));
-      
+    // Auto-analyze if condition set
+    if (this.condition) {
       enqueueBulkPdfAnalysis({
         filename,
         relPath,
         absPath,
+        condition: this.condition,
+        onUpdate: (u) => this.emitLabel(u.filename, u.relPath, u.label),
+      });
+    }
+  }
+
+  private emitLabel(filename: string, relPath: string, label: string | null): void {
+    this.emitter.emit('label', { type: 'label', filename, relPath, label, ts: Date.now() });
+  }
+
+  on(event: string, cb: (data: unknown) => void): () => void {
+    this.emitter.on(event, cb);
+    return () => this.emitter.off(event, cb);
+  }
+
+  emitLabelUpdate(evt: Omit<BulkResumeLabelEvent, 'type' | 'ts'> & { ts?: number }): void {
+    this.emitter.emit('label', { type: 'label', ...evt, ts: evt.ts ?? Date.now() });
+  }
+
+  isReady(): boolean { return this.ready; }
+  getWatchDir(): string { return this.watchDir; }
+
+  async analyzeAllPending(condition: string): Promise<number> {
+    this.condition = condition;
+
+    const names = await fs.readdir(this.watchDir);
+    const pdfs = names.filter(n => n.toLowerCase().endsWith('.pdf'));
+    const labels = await readBulkManifestLabels();
+
+    let enqueued = 0;
+    for (const filename of pdfs) {
+      const label = labels.get(filename) ?? STATUS_PENDING;
+      if (label !== STATUS_PENDING && label !== STATUS_IN_PROGRESS) continue;
+
+      const absPath = path.join(this.watchDir, filename);
+      enqueueBulkPdfAnalysis({
+        filename,
+        relPath: toPosixPath(path.relative(process.cwd(), absPath)),
+        absPath,
         condition,
-        onUpdate: (u) => {
-          this.emitter.emit('label', {
-            type: 'label',
-            filename: u.filename,
-            relPath: u.relPath,
-            label: u.label,
-            ts: Date.now(),
-          } satisfies BulkResumeLabelEvent);
-        },
+        onUpdate: (u) => this.emitLabel(u.filename, u.relPath, u.label),
       });
       enqueued++;
     }
-    
+
     return enqueued;
   }
 }
 
-// Lazy singleton - only initialize when first accessed at runtime
-let _bulkResumeWatcher: BulkResumeWatcher | null = null;
+// Lazy singleton
+let instance: BulkResumeWatcher | null = null;
 
-function getBulkResumeWatcher(): BulkResumeWatcher {
-  if (_bulkResumeWatcher) return _bulkResumeWatcher;
+function getInstance(): BulkResumeWatcher {
+  if (instance) return instance;
 
-  const g = globalThis as unknown as {
-    __sentraBulkResumeWatcher?: BulkResumeWatcher;
-  };
-
-  if (g.__sentraBulkResumeWatcher) {
-    _bulkResumeWatcher = g.__sentraBulkResumeWatcher;
-    return _bulkResumeWatcher;
+  const g = globalThis as unknown as { __bulkWatcher?: BulkResumeWatcher };
+  if (g.__bulkWatcher) {
+    instance = g.__bulkWatcher;
+    return instance;
   }
 
-  const watchDir = getBulkUploadsDir();
-  const rw = new BulkResumeWatcher(watchDir);
+  const rw = new BulkResumeWatcher(getBulkUploadsDir());
   rw.start();
-  g.__sentraBulkResumeWatcher = rw;
-  _bulkResumeWatcher = rw;
+  g.__bulkWatcher = rw;
+  instance = rw;
   return rw;
 }
 
-// Export a getter instead of the instance directly
+// Proxy for lazy initialization
 export const bulkResumeWatcher = {
-  get instance() {
-    return getBulkResumeWatcher();
-  },
-  on: (...args: Parameters<BulkResumeWatcher['on']>) => getBulkResumeWatcher().on(...args),
-  analyzeAllPending: (...args: Parameters<BulkResumeWatcher['analyzeAllPending']>) => getBulkResumeWatcher().analyzeAllPending(...args),
-  getWatchDir: () => getBulkResumeWatcher().getWatchDir(),
-  isReady: () => getBulkResumeWatcher().isReady(),
-  setCondition: (c: string) => getBulkResumeWatcher().setCondition(c),
-  getCondition: () => getBulkResumeWatcher().getCondition(),
-  emitLabelUpdate: (...args: Parameters<BulkResumeWatcher['emitLabelUpdate']>) => getBulkResumeWatcher().emitLabelUpdate(...args),
+  get instance() { return getInstance(); },
+  on: (event: string, cb: (data: unknown) => void) => getInstance().on(event, cb),
+  analyzeAllPending: (condition: string) => getInstance().analyzeAllPending(condition),
+  getWatchDir: () => getInstance().getWatchDir(),
+  isReady: () => getInstance().isReady(),
+  setCondition: (c: string) => getInstance().setCondition(c),
+  getCondition: () => getInstance().getCondition(),
+  emitLabelUpdate: (evt: Omit<BulkResumeLabelEvent, 'type' | 'ts'> & { ts?: number }) => getInstance().emitLabelUpdate(evt),
 };
 
-export function emitBulkResumeLabelUpdate(
-  evt: Omit<BulkResumeLabelEvent, 'type' | 'ts'> & { ts?: number }
-) {
-  getBulkResumeWatcher().emitLabelUpdate(evt);
+export function emitBulkResumeLabelUpdate(evt: Omit<BulkResumeLabelEvent, 'type' | 'ts'> & { ts?: number }): void {
+  getInstance().emitLabelUpdate(evt);
 }

@@ -5,63 +5,38 @@ import { resumeWatcher } from '@/lib/resumeWatcher';
 
 export const runtime = 'nodejs';
 
-function getManifestPath() {
-  return process.env.MANIFEST_PATH || path.resolve(process.cwd(), 'dataset', 'manifest.csv');
-}
+const getManifestPath = () => process.env.MANIFEST_PATH || path.resolve(process.cwd(), 'dataset', 'manifest.csv');
 
-/**
- * POST /api/clear-all
- * Deletes all PDF files in the resume directory and resets manifest.csv
- * This is a destructive operation - use with caution!
- * 
- * NOTE: This intentionally PRESERVES rejected_candidates.json so that
- * previously rejected candidates won't be re-downloaded on future pulls.
- */
 export async function POST() {
   const resumeDir = resumeWatcher.getWatchDir();
   const manifestPath = getManifestPath();
-
   const deleted: string[] = [];
   const errors: string[] = [];
 
   try {
-    // 1. Get all PDF files in the resume directory
     const files = await fs.readdir(resumeDir);
-    const pdfFiles = files.filter((f) => f.toLowerCase().endsWith('.pdf'));
+    const pdfs = files.filter(f => f.toLowerCase().endsWith('.pdf'));
 
-    // 2. Delete each PDF file
-    for (const filename of pdfFiles) {
+    for (const filename of pdfs) {
       try {
-        const filePath = path.join(resumeDir, filename);
-        await fs.unlink(filePath);
+        await fs.unlink(path.join(resumeDir, filename));
         deleted.push(filename);
       } catch (err) {
-        errors.push(`Failed to delete ${filename}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errors.push(`${filename}: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     }
 
-    // 3. Reset manifest.csv to just the header
-    try {
-      await fs.writeFile(manifestPath, 'filename,label\n', 'utf8');
-    } catch (err) {
-      errors.push(`Failed to reset manifest: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
+    await fs.writeFile(manifestPath, 'filename,label\n', 'utf8');
 
-    // 4. Delete metadata files (optional cleanup)
-    const metadataDir = path.join(path.dirname(resumeDir), 'ashby_metadata');
+    // Clean metadata
     try {
-      const metaFiles = await fs.readdir(metadataDir);
-      for (const metaFile of metaFiles) {
-        if (metaFile.endsWith('.json')) {
-          try {
-            await fs.unlink(path.join(metadataDir, metaFile));
-          } catch {
-            // Ignore metadata deletion errors
-          }
-        }
-      }
+      const metaDir = path.join(path.dirname(resumeDir), 'ashby_metadata');
+      const metaFiles = await fs.readdir(metaDir);
+      await Promise.all(
+        metaFiles.filter(f => f.endsWith('.json')).map(f => fs.unlink(path.join(metaDir, f)).catch(() => {}))
+      );
     } catch {
-      // Metadata dir may not exist, that's fine
+      // Metadata dir may not exist
     }
 
     return NextResponse.json({
@@ -69,46 +44,26 @@ export async function POST() {
       deleted: deleted.length,
       deletedFiles: deleted,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Cleared ${deleted.length} PDFs and reset manifest`,
+      message: `Cleared ${deleted.length} PDFs`,
     });
   } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : 'Unknown error',
-        deleted: deleted.length,
-        deletedFiles: deleted,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+      deleted: deleted.length,
+      deletedFiles: deleted,
+    }, { status: 500 });
   }
 }
 
-/**
- * GET /api/clear-all
- * Returns current count of PDFs (for confirmation dialog)
- */
 export async function GET() {
   const resumeDir = resumeWatcher.getWatchDir();
 
   try {
     const files = await fs.readdir(resumeDir);
-    const pdfFiles = files.filter((f) => f.toLowerCase().endsWith('.pdf'));
-
-    return NextResponse.json({
-      ok: true,
-      count: pdfFiles.length,
-      directory: resumeDir,
-    });
+    const pdfs = files.filter(f => f.toLowerCase().endsWith('.pdf'));
+    return NextResponse.json({ ok: true, count: pdfs.length, directory: resumeDir });
   } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : 'Unknown error',
-        count: 0,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'Unknown', count: 0 }, { status: 500 });
   }
 }
-

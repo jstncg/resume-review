@@ -4,20 +4,24 @@ AI-powered resume screening with full Ashby ATS integration. Import resumes, ana
 
 ## Features
 
-- **Ashby Integration**: Import resumes directly from any Ashby job
-- **AI Analysis**: OpenAI-powered resume screening with customizable conditions
-- **Smart Filtering**: Filter by application status (Active/Archived) and interview stage
-- **Drag & Drop**: Move candidates between Rejected, Passed, and User Reviewed
+- **Ashby Integration**: Import resumes from any Ashby job with status and stage filters
+- **Tiered AI Screening**: Bulk uploads support `good_fit` → `very_good` → `perfect`
+- **Smart Filtering**: Filter by application status and interview stage
+- **Drag & Drop Review**: Move candidates across Rejected, Passed, and User Reviewed
+- **Stage Sync**: Optionally sync column moves back to Ashby interview stages
 - **Auto-Archive**: Automatically archive rejected candidates in Ashby
-- **Real-time Updates**: Live status changes via Server-Sent Events
+- **Scanned PDF Detection**: Auto-detect image-based PDFs and handle them safely
+- **Rejected Tracking**: Prevent re-downloading previously rejected candidates
+- **Real-time Updates**: Live status updates via Server-Sent Events
 
 ## Tech Stack
 
-- **Next.js 14** — Full-stack React framework
+- **Next.js 16** — Full-stack React framework
+- **React 19** — UI framework
 - **Chokidar** — File system monitoring
 - **PDF-Parse** — PDF text extraction
 - **OpenAI** — LLM resume analysis
-- **TailwindCSS** — Styling
+- **TailwindCSS v4** — Styling
 
 ## Quick Start
 
@@ -53,8 +57,14 @@ Open http://localhost:3000
 
 ## Workflow
 
+Ashby import:
 ```
 PDF Added → pending → in_progress → good_fit/bad_fit → user_reviewed
+```
+
+Bulk upload:
+```
+PDF Added → pending → in_progress → bad_fit | good_fit | very_good | perfect
 ```
 
 1. **Import**: Pull resumes from Ashby (or drop PDFs in watched folder)
@@ -116,6 +126,25 @@ ASHBY_JOB_NAME_INCLUDES=...                # Optional: match job by title substr
 ```
 
 Downloaded PDFs go to `dataset/sentra_test_resumes/` (the watched folder).
+
+## Stage Sync (Optional)
+
+Automatically move candidates in Ashby when you drag them across columns.
+
+1. Ensure your Ashby API key has **Candidates: Write** permission
+2. Open the app and configure stage mappings in **Ashby Stage Sync**
+3. Dragging cards to **User Reviewed** or **Rejected** will update Ashby
+
+If no mappings are configured, the UI still works and no Ashby updates are made.
+
+## Bulk Upload
+
+For local batches, use the **Bulk Upload** tab:
+
+- Upload a folder of PDFs
+- Analyze with tiered labels: `good_fit`, `very_good`, `perfect`, `bad_fit`
+- Candidate names are extracted for passing resumes
+- Results are stored in `dataset/bulk_uploads/` and `dataset/manifest_bulk.csv`
 
 ## Resume Review UI
 
@@ -367,15 +396,26 @@ ASHBY_API_KEY=...                           # Ashby API key
 OPENAI_MODEL=gpt-4o-mini                    # Model for analysis (default: gpt-4o-mini)
 ANALYSIS_CONDITION="..."                    # Default screening condition
 ANALYSIS_MAX_CONCURRENCY=2                  # Parallel analysis jobs
+BULK_ANALYSIS_MAX_CONCURRENCY=2             # Parallel analysis jobs for bulk uploads
+
+# Modes
+STRICT_MODE=false                           # Run a strict verification pass on Stage 1
+TIERED_MODE=true                            # Enable tiered labels for analysis
 
 # Ashby Settings
 AUTO_ARCHIVE_REJECTED=true                  # Auto-archive bad_fit candidates
 ASHBY_ARCHIVE_REASON_ID=...                 # Archive reason ID (optional)
 ASHBY_JOB_ID=...                            # Default job ID (optional)
+ASHBY_JOB_NAME_INCLUDES=...                 # Match jobs by title substring (optional)
 
 # Advanced
 ASHBY_API_BASE=https://api.ashbyhq.com      # API base URL
 MANIFEST_PATH=./dataset/manifest.csv        # Manifest location
+RESUME_DIR=./dataset/sentra_test_resumes    # Watched resume folder
+BULK_UPLOADS_DIR=./dataset/bulk_uploads     # Bulk upload folder
+BULK_NAMES_PATH=./dataset/bulk_names.json   # Bulk names metadata
+BULK_MANIFEST_PATH=./dataset/manifest_bulk.csv
+NEXTAUTH_URL=http://localhost:3000          # Server base URL for background reconcile
 ```
 
 ---

@@ -5,16 +5,7 @@ import { STATUS_USER_REVIEWED_PREFIX } from '@/lib/labels';
 
 export const runtime = 'nodejs';
 
-type ReviewRequest = {
-  filename?: string;
-  relPath?: string;
-  review?: string;
-};
-
-function sanitizeReview(input: string): string {
-  // Keep it single-line for CSV friendliness and UI rendering.
-  return input.replace(/\r?\n/g, ' ').trim();
-}
+type ReviewRequest = { filename?: string; relPath?: string; review?: string };
 
 export async function POST(req: Request) {
   let body: ReviewRequest;
@@ -24,42 +15,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const filename = body?.filename;
-  const relPath = body?.relPath;
-  const reviewRaw = body?.review;
+  const { filename, relPath, review: reviewRaw } = body;
 
   if (typeof filename !== 'string' || typeof relPath !== 'string') {
-    return NextResponse.json(
-      {
-        error: 'Expected { filename: string, relPath: string, review: string }',
-      },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'filename and relPath required' }, { status: 400 });
   }
 
   if (typeof reviewRaw !== 'string') {
-    return NextResponse.json(
-      { error: 'Review must be a string' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'review must be string' }, { status: 400 });
   }
 
-  const review = sanitizeReview(reviewRaw);
-  if (review.length === 0) {
-    return NextResponse.json({ error: 'Review is required' }, { status: 400 });
+  const review = reviewRaw.replace(/\r?\n/g, ' ').trim();
+  if (!review) {
+    return NextResponse.json({ error: 'Review required' }, { status: 400 });
   }
 
   if (review.length > 255) {
-    return NextResponse.json(
-      { error: 'Review must be <= 255 characters' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'Review must be ≤ 255 chars' }, { status: 400 });
   }
 
   const label = `${STATUS_USER_REVIEWED_PREFIX}${review}`;
   await upsertManifestLabel(filename, label);
-
-  // Push live update to connected clients
   emitResumeLabelUpdate({ filename, relPath, label });
 
   return NextResponse.json({ ok: true, filename, relPath, label });

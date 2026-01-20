@@ -41,10 +41,10 @@ type LabelEvent = {
 };
 
 // Passing labels that should show candidate names
-const PASSING_LABELS = [STATUS_GOOD_FIT, STATUS_VERY_GOOD, STATUS_PERFECT];
+const PASSING_LABELS: string[] = [STATUS_GOOD_FIT, STATUS_VERY_GOOD, STATUS_PERFECT];
 
 // All columns that support drag-and-drop between them
-const DRAGGABLE_COLUMNS = [STATUS_BAD_FIT, STATUS_GOOD_FIT, STATUS_VERY_GOOD, STATUS_PERFECT];
+const DRAGGABLE_COLUMNS: string[] = [STATUS_BAD_FIT, STATUS_GOOD_FIT, STATUS_VERY_GOOD, STATUS_PERFECT];
 
 type BulkResumeMonitorProps = {
   onStatsChange?: (stats: {

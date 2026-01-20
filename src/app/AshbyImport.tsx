@@ -446,31 +446,27 @@ export function AshbyImport() {
  * Wrapper component that renders StageMappingConfig with job selection from localStorage.
  * Uses a custom event for same-tab updates since storage events only fire cross-tab.
  */
+function getStoredJobId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem('ashby-import-settings');
+    return saved ? JSON.parse(saved).selectedJobId || null : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AshbyStageSync() {
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(getStoredJobId);
 
   useEffect(() => {
-    const getJobId = (): string | null => {
-      try {
-        const saved = localStorage.getItem('ashby-import-settings');
-        return saved ? JSON.parse(saved).selectedJobId || null : null;
-      } catch {
-        return null;
-      }
-    };
-
-    // Initial load
-    setJobId(getJobId());
-
-    // Listen for cross-tab storage changes
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'ashby-import-settings') {
-        setJobId(getJobId());
+        setJobId(getStoredJobId());
       }
     };
-    
-    // Listen for same-tab custom event (dispatched from AshbyImport)
-    const handleCustomEvent = () => setJobId(getJobId());
+
+    const handleCustomEvent = () => setJobId(getStoredJobId());
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('ashby-job-changed', handleCustomEvent);
